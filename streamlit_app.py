@@ -227,9 +227,10 @@ def my_iou_av(boxesA, boxesB):
     iou=0.555
     iou_avg=0.0
     n_box = 1.0
-
-    for idx, boxA in boxesA.iterrows():
-        boxB = boxesA[idx]
+    idx=0
+    for _, boxA in boxesA.iterrows():
+        boxB = boxesB[idx]
+        idx=idx+1
         # determine the (x, y)-coordinates of the intersection rectangle
         xA = max(boxA[0], boxB[0])
         yA = max(boxA[1], boxB[1])
