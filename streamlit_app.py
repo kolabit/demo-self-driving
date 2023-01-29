@@ -21,6 +21,7 @@ import altair as alt
 import pandas as pd
 import numpy as np
 import os, urllib, cv2
+import torch
 
 # Streamlit encourages well-structured code, like starting execution in a main() function.
 def main():
@@ -219,6 +220,10 @@ def load_image(url):
 
 # Run the YOLO v5 model to detect objects.
 def yolo_v5(image, confidence_threshold, overlap_threshold):
+
+    # Model
+    model = torch.hub.load('ultralytics/yolov5', 'yolov5s') 
+    model(image)
 
     # Load the network. Because this is cached it will only happen once.
     #@st.cache(allow_output_mutation=True)
