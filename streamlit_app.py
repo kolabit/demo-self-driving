@@ -24,25 +24,29 @@ import os, urllib, cv2
 
 # Streamlit encourages well-structured code, like starting execution in a main() function.
 def main():
+    
+    
     # Render the readme as markdown using st.markdown.
-    readme_text = st.markdown(get_file_content_as_string("instructions.md"))
+    #readme_text = st.markdown(get_file_content_as_string("instructions.md"))
 
     # Download external dependencies.
     for filename in EXTERNAL_DEPENDENCIES.keys():
         download_file(filename)
+    
+    run_the_app()
 
     # Once we have the dependencies, add a selector for the app mode on the sidebar.
-    st.sidebar.title("What to do")
-    app_mode = st.sidebar.selectbox("Choose the app mode",
-        ["Show instructions", "Run the app", "Show the source code"])
-    if app_mode == "Show instructions":
-        st.sidebar.success('To continue select "Run the app".')
-    elif app_mode == "Show the source code":
-        readme_text.empty()
-        st.code(get_file_content_as_string("streamlit_app.py"))
-    elif app_mode == "Run the app":
-        readme_text.empty()
-        run_the_app()
+    #st.sidebar.title("What to do")
+    #app_mode = st.sidebar.selectbox("Choose the app mode",
+    #    ["Show instructions", "Run the app", "Show the source code"])
+    #if app_mode == "Show instructions":
+    #    st.sidebar.success('To continue select "Run the app".')
+    #elif app_mode == "Show the source code":
+    #    readme_text.empty()
+    #    st.code(get_file_content_as_string("streamlit_app.py"))
+    #elif app_mode == "Run the app":
+    #    readme_text.empty()
+    #    run_the_app()
 
 # This file downloader demonstrates Streamlit animation.
 def download_file(file_path):
@@ -95,7 +99,7 @@ def run_the_app():
     def create_summary(metadata):
         one_hot_encoded = pd.get_dummies(metadata[["frame", "label"]], columns=["label"])
         summary = one_hot_encoded.groupby(["frame"]).sum().rename(columns={
-            "label_biker": "biker",
+            "label_qr-code": "qr-code",
             "label_car": "car",
             "label_pedestrian": "pedestrian",
             "label_trafficLight": "traffic light",
@@ -163,6 +167,34 @@ def frame_selector_ui(summary):
     selected_frame = selected_frames[selected_frame_index]
     return selected_frame_index, selected_frame
 
+# This sidebar UI is a little search engine to find certain object types.
+def frame_selector_ui_k(summary):
+    st.sidebar.markdown("# Frame")
+
+    # The user can pick which type of object to search for.
+    object_type = st.sidebar.selectbox("Search for which objects?", summary.columns, 2)
+
+    # The user can select a range for how many of the selected objecgt should be present.
+    min_elts, max_elts = st.sidebar.slider("How many %ss (select a range)?" % object_type, 0, 25, [10, 20])
+    selected_frames = get_selected_frames(summary, object_type, min_elts, max_elts)
+    if len(selected_frames) < 1:
+        return None, None
+
+    # Choose a frame out of the selected frames.
+    selected_frame_index = st.sidebar.slider("Choose a frame (index)", 0, len(selected_frames) - 1, 0)
+
+    # Draw an altair chart in the sidebar with information on the frame.
+    objects_per_frame = summary.loc[selected_frames, object_type].reset_index(drop=True).reset_index()
+    chart = alt.Chart(objects_per_frame, height=120).mark_area().encode(
+        alt.X("index:Q", scale=alt.Scale(nice=False)),
+        alt.Y("%s:Q" % object_type))
+    selected_frame_df = pd.DataFrame({"selected_frame": [selected_frame_index]})
+    vline = alt.Chart(selected_frame_df).mark_rule(color="red").encode(x = "selected_frame")
+    st.sidebar.altair_chart(alt.layer(chart, vline))
+
+    selected_frame = selected_frames[selected_frame_index]
+    return selected_frame_index, selected_frame
+
 # Select frames based on the selection in the sidebar
 @st.cache(hash_funcs={np.ufunc: str})
 def get_selected_frames(summary, label, min_elts, max_elts):
@@ -184,6 +216,7 @@ def draw_image_with_boxes(image, boxes, header, description):
         "truck": [0, 0, 255],
         "trafficLight": [255, 255, 0],
         "biker": [255, 0, 255],
+        "qr-code": [255, 0, 255]
     }
     image_with_boxes = image.astype(np.float64)
     for _, (xmin, ymin, xmax, ymax, label) in boxes.iterrows():
@@ -211,6 +244,72 @@ def load_image(url):
     image = cv2.imdecode(image, cv2.IMREAD_COLOR)
     image = image[:, :, [2, 1, 0]] # BGR -> RGB
     return image
+
+# Run the YOLO v5 model to detect objects.
+def yolo_v5(image, confidence_threshold, overlap_threshold):
+    # Load the network. Because this is cached it will only happen once.
+    @st.cache(allow_output_mutation=True)
+    def load_network(config_path, weights_path):
+        net = cv2.dnn.readNetFromDarknet(config_path, weights_path)
+        output_layer_names = net.getLayerNames()
+        output_layer_names = [output_layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+        return net, output_layer_names
+    net, output_layer_names = load_network("yolov3.cfg", "yolov3.weights")
+
+    # Run the YOLO neural net.
+    blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (416, 416), swapRB=True, crop=False)
+    net.setInput(blob)
+    layer_outputs = net.forward(output_layer_names)
+
+    # Supress detections in case of too low confidence or too much overlap.
+    boxes, confidences, class_IDs = [], [], []
+    H, W = image.shape[:2]
+    for output in layer_outputs:
+        for detection in output:
+            scores = detection[5:]
+            classID = np.argmax(scores)
+            confidence = scores[classID]
+            if confidence > confidence_threshold:
+                box = detection[0:4] * np.array([W, H, W, H])
+                centerX, centerY, width, height = box.astype("int")
+                x, y = int(centerX - (width / 2)), int(centerY - (height / 2))
+                boxes.append([x, y, int(width), int(height)])
+                confidences.append(float(confidence))
+                class_IDs.append(classID)
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, confidence_threshold, overlap_threshold)
+
+    # Map from YOLO labels to Udacity labels.
+    #UDACITY_LABELS = {
+    #    0: 'pedestrian',
+    #    1: 'biker',
+    #    2: 'car',
+    #    3: 'biker',
+    #    5: 'truck',
+    #    7: 'truck',
+    #    9: 'trafficLight'
+    #}
+    UDACITY_LABELS = {
+        0: 'qr-code',
+    }
+    xmin, xmax, ymin, ymax, labels = [], [], [], [], []
+    if len(indices) > 0:
+        # loop over the indexes we are keeping
+        for i in indices.flatten():
+            label = UDACITY_LABELS.get(class_IDs[i], None)
+            if label is None:
+                continue
+
+            # extract the bounding box coordinates
+            x, y, w, h = boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3]
+
+            xmin.append(x)
+            ymin.append(y)
+            xmax.append(x+w)
+            ymax.append(y+h)
+            labels.append(label)
+
+    boxes = pd.DataFrame({"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "labels": labels})
+    return boxes[["xmin", "ymin", "xmax", "ymax", "labels"]]
 
 # Run the YOLO model to detect objects.
 def yolo_v3(image, confidence_threshold, overlap_threshold):
@@ -276,17 +375,25 @@ def yolo_v3(image, confidence_threshold, overlap_threshold):
     return boxes[["xmin", "ymin", "xmax", "ymax", "labels"]]
 
 # Path to the Streamlit public S3 bucket
-DATA_URL_ROOT = "https://streamlit-self-driving.s3-us-west-2.amazonaws.com/"
+#DATA_URL_ROOT = "https://streamlit-self-driving.s3-us-west-2.amazonaws.com/"
+DATA_URL_ROOT = "https://raw.githubusercontent.com/kolabit/qr-codes/main/images/test/"
 
 # External files to download.
+#EXTERNAL_DEPENDENCIES = {
+#    "yolov3.weights": {
+#        "url": "https://pjreddie.com/media/files/yolov3.weights",
+#        "size": 248007048
+#    },
+#    "yolov3.cfg": {
+#        "url": "https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg",
+#        "size": 8342
+#    }
+#}
+
 EXTERNAL_DEPENDENCIES = {
-    "yolov3.weights": {
-        "url": "https://pjreddie.com/media/files/yolov3.weights",
-        "size": 248007048
-    },
-    "yolov3.cfg": {
-        "url": "https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg",
-        "size": 8342
+    "best.pt": {
+        "url": "https://github.com/kolabit/qr-codes/raw/main/best.pt",
+        "size": 42209641
     }
 }
 
