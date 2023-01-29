@@ -222,8 +222,8 @@ def load_image(url):
 def yolo_v5(image, confidence_threshold, overlap_threshold):
 
     # Model
-    model = torch.hub.load('ultralytics/yolov5', 'yolov5s') 
-    model(image)
+    model_qr = torch.hub.load('ultralytics/yolov5', 'custom', path='./best.pt') 
+    model_qr(image)
 
     # Load the network. Because this is cached it will only happen once.
     #@st.cache(allow_output_mutation=True)
