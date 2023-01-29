@@ -144,7 +144,7 @@ def frame_selector_ui(summary):
     st.sidebar.markdown("# Frame")
 
     # The user can pick which type of object to search for.
-    object_type = st.sidebar.selectbox("Search for which objects?", summary.columns, 0)
+    object_type = "qr-code" #st.sidebar.selectbox("Search for which objects?", summary.columns, 0)
 
     # The user can select a range for how many of the selected objecgt should be present.
     min_elts, max_elts = st.sidebar.slider("How many %ss (select a range)?" % object_type, 0, 25, [10, 20])
