@@ -138,7 +138,7 @@ def run_the_app():
     # Get the boxes for the objects detected by YOLO by running the YOLO model.
     yolo_boxes = yolo_v5(image, confidence_threshold )
     draw_image_with_boxes(image, yolo_boxes, "Inference result",
-        "**YOLO v5 Model, trained for QR code detection** (overlap `%3.1f`) (confidence `%3.1f`)" % (overlap_threshold, confidence_threshold))
+        "**YOLO v5 Model, trained for QR code detection** (confidence `%3.1f`)" % (confidence_threshold))
 
 # This sidebar UI is a little search engine to find certain object types.
 def frame_selector_ui(summary):
