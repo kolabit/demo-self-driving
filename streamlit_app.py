@@ -137,8 +137,10 @@ def run_the_app():
 
     # Get the boxes for the objects detected by YOLO by running the YOLO model.
     yolo_boxes = yolo_v5(image, confidence_threshold )
+
+    iou = my_iou_av(yolo_boxes, boxes)
     draw_image_with_boxes(image, yolo_boxes, "Inference result",
-        "**YOLO v5 Model, trained for QR code detection** (confidence `%3.1f`)" % (confidence_threshold))
+        "**YOLO v5 Model, trained for QR code detection** (confidence `%3.1f`), IOUavg=`%3.3f`" % (confidence_threshold, iou))
 
 # This sidebar UI is a little search engine to find certain object types.
 def frame_selector_ui(summary):
@@ -216,6 +218,37 @@ def load_image(url):
     image = cv2.imdecode(image, cv2.IMREAD_COLOR)
     image = image[:, :, [2, 1, 0]] # BGR -> RGB
     return image
+
+def my_iou_av(boxesA, boxesB): 
+    boxesA = boxesA.sort_values(by=['xmin'])
+    boxesA = boxesA.sort_values(by=['ymin'])
+    boxesB = boxesB.sort_values(by=['xmin'])
+    boxesB = boxesB.sort_values(by=['ymin'])
+    iou=0.555
+    iou_avg=0.0
+    n_box = 1.0
+
+    for idx, boxA in boxesA.iterrows():
+        boxB = boxesA[idx]
+        # determine the (x, y)-coordinates of the intersection rectangle
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        # compute the area of intersection rectangle
+        interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+        # compute the area of both the prediction and ground-truth
+        # rectangles
+        boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+        boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+        # compute the intersection over union by taking the intersection
+        # area and dividing it by the sum of prediction + ground-truth
+        # areas - the interesection area
+        iou = interArea / float(boxAArea + boxBArea - interArea)
+        n_box=n_box+1.0
+        iou_avg = iou_avg+iou
+	# return the intersection over union value
+    return (iou_avg/n_box)
 
 # Run the YOLO v5 model to detect objects.
 def yolo_v5(image, confidence_threshold ):
