@@ -123,8 +123,8 @@ def run_the_app():
         st.error("No frames fit the criteria. Please select different label or number.")
         return
 
-    # Draw the UI element to select parameters for the YOLO object detector.
-    confidence_threshold, overlap_threshold = object_detector_ui()
+    # Draw the UI element to select the confidence threshold
+    confidence_threshold = confidence_threshold_ui()
 
     # Load the image from S3.
     image_url = os.path.join(DATA_URL_ROOT, selected_frame)
@@ -136,7 +136,7 @@ def run_the_app():
         "**QR code images, annotaed by me** (frame `%i`)" % selected_frame_index)
 
     # Get the boxes for the objects detected by YOLO by running the YOLO model.
-    yolo_boxes = yolo_v5(image, confidence_threshold, overlap_threshold)
+    yolo_boxes = yolo_v5(image, confidence_threshold )
     draw_image_with_boxes(image, yolo_boxes, "Inference result",
         "**YOLO v5 Model, trained for QR code detection** (overlap `%3.1f`) (confidence `%3.1f`)" % (overlap_threshold, confidence_threshold))
 
@@ -173,12 +173,11 @@ def frame_selector_ui(summary):
 def get_selected_frames(summary, label, min_elts, max_elts):
     return summary[np.logical_and(summary[label] >= min_elts, summary[label] <= max_elts)].index
 
-# This sidebar UI lets the user select parameters for the YOLO object detector.
-def object_detector_ui():
+# This sidebar UI lets the user select the value of the confidence threshold
+def confidence_threshold_ui():
     st.sidebar.markdown("# Model")
     confidence_threshold = st.sidebar.slider("Confidence threshold", 0.0, 1.0, 0.5, 0.01)
-    overlap_threshold = st.sidebar.slider("Overlap threshold", 0.0, 1.0, 0.3, 0.01)
-    return confidence_threshold, overlap_threshold
+    return confidence_threshold 
 
 # Draws an image with boxes overlayed to indicate the presence of cars, pedestrians etc.
 def draw_image_with_boxes(image, boxes, header, description):
@@ -219,12 +218,26 @@ def load_image(url):
     return image
 
 # Run the YOLO v5 model to detect objects.
-def yolo_v5(image, confidence_threshold, overlap_threshold):
+def yolo_v5(image, confidence_threshold ):
 
     # Model
     model_qr = torch.hub.load('ultralytics/yolov5', 'custom', path='./best.pt') 
-    model_qr(image)
+    detections_qr = model_qr(image)
+    xmin, xmax, ymin, ymax, labels = [], [], [], [], []
 
+    results = detections_qr.pandas().xyxy[0].to_dict(orient="records")
+    for result in results:
+        conf_i = result['confidence']
+        if(conf_i >=confidence_threshold):
+            xmin.append(int(result['xmin']))
+            ymin.append(int(result['ymin']))
+            xmax.append(int(result['xmax']))
+            ymax.append(int(result['ymax']))
+            labels.append('qr-code')
+    
+    boxes = pd.DataFrame({"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "labels": labels})
+    return boxes[["xmin", "ymin", "xmax", "ymax", "labels"]]
+ 
     # Load the network. Because this is cached it will only happen once.
     #@st.cache(allow_output_mutation=True)
     #def load_network(config_path, weights_path):
@@ -268,10 +281,11 @@ def yolo_v5(image, confidence_threshold, overlap_threshold):
     #    9: 'trafficLight'
     #}
 
-    UDACITY_LABELS = {
-        0: 'qr-code',
-    }
-    xmin, xmax, ymin, ymax, labels = [100,200], [300,400], [120,250], [320,450], ['qr-code', 'qr-code']
+    ####UDACITY_LABELS = {
+    ####    0: 'qr-code',
+    ####}
+    ####xmin, xmax, ymin, ymax, labels = [100,200], [300,400], [120,250], [320,450], ['qr-code', 'qr-code']
+
     #if len(indices) > 0:
         # loop over the indexes we are keeping
     #    for i in indices.flatten():
@@ -288,8 +302,8 @@ def yolo_v5(image, confidence_threshold, overlap_threshold):
     #        ymax.append(y+h)
     #        labels.append(label)
 
-    boxes = pd.DataFrame({"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "labels": labels})
-    return boxes[["xmin", "ymin", "xmax", "ymax", "labels"]]
+    ### boxes = pd.DataFrame({"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "labels": labels})
+    ### return boxes[["xmin", "ymin", "xmax", "ymax", "labels"]]
 
 # Run the YOLO model to detect objects.
 def yolo_v3(image, confidence_threshold, overlap_threshold):
