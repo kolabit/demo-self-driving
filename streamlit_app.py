@@ -226,7 +226,7 @@ def my_iou_av(boxesA, boxesB):
     boxesB = boxesB.sort_values(by=['ymin'])
     iou=0.555
     iou_avg=0.0
-    n_box = 1.0
+    n_box = 0.0
  
     for (_, boxA), (_, boxB) in zip(boxesA.iterrows(), boxesB.iterrows()):
      
